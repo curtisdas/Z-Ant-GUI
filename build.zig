@@ -237,4 +237,41 @@ pub fn build(b: *std.Build) void {
         const run_step = b.step("gui", "Run gui");
         run_step.dependOn(&run_cmd.step);
     }
+
+    // ************************************************ WASM GUI ************************************************
+
+    {
+        const web_target = b.resolveTargetQuery(.{
+            .cpu_arch = .wasm32,
+            .os_tag = .freestanding,
+        });
+
+        const dvui_dep = b.dependency("dvui", .{ .target = target, .optimize = optimize, .backend = .web });
+
+        const web_test = b.addExecutable(.{
+            .name = "gui",
+            .root_source_file = b.path("gui/web/web.zig"),
+            .target = web_target,
+            .optimize = optimize,
+            .link_libc = false,
+            .strip = if (optimize == .ReleaseFast or optimize == .ReleaseSmall) true else false,
+        });
+
+        web_test.entry = .disabled;
+        web_test.root_module.addImport("dvui", dvui_dep.module("dvui_web"));
+
+        const install_wasm = b.addInstallArtifact(web_test, .{
+            .dest_dir = .{ .override = .{ .custom = "bin" } },
+        });
+
+        const install_noto = b.addInstallBinFile(b.path("gui/web/NotoSansKR-Regular.ttf"), "NotoSansKR-Regular.ttf");
+
+        const compile_step = b.step("wasm-gui", "Compile the WASM GUI");
+        compile_step.dependOn(&install_wasm.step);
+        compile_step.dependOn(&install_noto.step);
+        compile_step.dependOn(&b.addInstallFileWithDir(b.path("gui/web/index.html"), .prefix, "bin/index.html").step);
+        const web_js = dvui_dep.namedLazyPath("web.js");
+        compile_step.dependOn(&b.addInstallFileWithDir(web_js, .prefix, "bin/web.js").step);
+        b.getInstallStep().dependOn(compile_step);
+    }
 }
