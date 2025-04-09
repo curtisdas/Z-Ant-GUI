@@ -317,7 +317,7 @@ pub const TensorProto = struct {
             std.debug.print("]\n", .{});
         }
 
-        std.debug.print("{s} External Data (key, value) [{}]: \n", .{ space, self.external_data.len });
+        std.debug.print("{s}External Data (key, value) [{}]: \n", .{ space, self.external_data.len });
         for (self.external_data) |ex| {
             ex.print(space);
         }

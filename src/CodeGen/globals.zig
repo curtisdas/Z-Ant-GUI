@@ -76,12 +76,12 @@ pub const ReadyTensor = struct {
         };
     }
 
-    pub fn createConstant(name: []const u8) !ReadyTensor {
+    pub fn createConstant(name: []const u8, tensorProto: *TensorProto) !ReadyTensor {
         return ReadyTensor{
             .name = name,
             .ready = true,
             .shape = networkInput.shape,
-            .tensorProto = null,
+            .tensorProto = tensorProto,
             .tag = TensorTag.CONSTANT,
         };
     }
@@ -212,15 +212,15 @@ fn populateReadyTensorHashMap(model: ModelOnnx) !void {
     //adding all the nodes inputs and outputs
     for (protoGraph.nodes) |node| { //for each NodeProto in the GraphProto
         for (node.input) |input_name| {
-            try addToTensorHashMap(input_name);
+            try addToTensorHashMap(input_name, node);
         }
         for (node.output) |output_name| {
-            try addToTensorHashMap(output_name);
+            try addToTensorHashMap(output_name, node);
         }
     }
 }
 
-pub fn addToTensorHashMap(name: []const u8) !void {
+pub fn addToTensorHashMap(name: []const u8, nodeProto: *NodeProto) !void {
     if (tensorHashMap.get(name)) |_| {
         return;
     } else {
@@ -231,15 +231,14 @@ pub fn addToTensorHashMap(name: []const u8) !void {
             try tensorHashMap.put(name, try ReadyTensor.createInput(name));
             return;
         }
-        //if input
-        if (std.mem.indexOf(u8, try utils.getSanitizedName(name), "constant") != null) {
+        //if constant, pay attention, we add the Constatant only if it is a TENSOR (aka AttributeProto.t)
+        if (std.mem.eql(u8, nodeProto.op_type, "Constant")) {
             //add the readyTensor to the HashMap
-            try tensorHashMap.put(name, try ReadyTensor.createConstant(name));
+            if (nodeProto.attribute[0].type == onnx.AttributeType.TENSOR) try tensorHashMap.put(name, try ReadyTensor.createConstant(name, nodeProto.attribute[0].t.?));
             return;
         }
 
         //else default
-
         //add the readyTensor to the HashMap
         try tensorHashMap.put(name, try ReadyTensor.createLink(name));
     }

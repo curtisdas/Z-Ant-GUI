@@ -21,6 +21,7 @@ const ReadyNode = @import("globals.zig").ReadyNode;
 const ReadyTensor = @import("globals.zig").ReadyTensor;
 const codegen = @import("codegen.zig");
 const utils = codegen.utils;
+const parameters = codegen.parameters;
 const codegen_options = @import("codegen_options");
 const globals = @import("globals.zig");
 
@@ -76,6 +77,8 @@ pub fn write_math_op(writer: std.fs.File.Writer, node: *ReadyNode) !void {
         try write_maxPool(writer, node);
     } else if (std.mem.eql(u8, node.nodeProto.op_type, "Mul")) {
         try write_mul(writer, node);
+    } else if (std.mem.eql(u8, node.nodeProto.op_type, "Neg")) {
+        try write_neg(writer, node);
     } else if (std.mem.eql(u8, node.nodeProto.op_type, "OneHot")) {
         try writer.writeAll("// Handle OneHot\n");
     } else if (std.mem.eql(u8, node.nodeProto.op_type, "ReduceMean")) {
@@ -95,7 +98,7 @@ pub fn write_math_op(writer: std.fs.File.Writer, node: *ReadyNode) !void {
     } else if (std.mem.eql(u8, node.nodeProto.op_type, "Split")) {
         try write_split(writer, node);
     } else if (std.mem.eql(u8, node.nodeProto.op_type, "Sub")) {
-        try writer.writeAll("// Handle Sub\n");
+        try write_sub(writer, node);
     } else if (std.mem.eql(u8, node.nodeProto.op_type, "Sum")) {
         try write_sum(writer, node);
     } else if (std.mem.eql(u8, node.nodeProto.op_type, "Transpose")) {
@@ -183,6 +186,51 @@ inline fn write_add(writer: std.fs.File.Writer, node: *ReadyNode) !void {
     _ = try writer.print(
         \\
         \\    tensMath.sum_tensors_lean(T, T, {s}, {s}, &tensor_{s})
+    , .{
+        tensor_A_string, // Input tensor A
+        tensor_B_string, // Input tensor B
+        try utils.getSanitizedName(node.outputs.items[0].name), // Output tensor C
+    });
+}
+
+inline fn write_sub(writer: std.fs.File.Writer, node: *ReadyNode) !void {
+    // https://onnx.ai/onnx/operators/onnx__Sub.html
+    // INPUTS:
+    //      - A (heterogeneous) - T: First operand.
+    //      - B (heterogeneous) - T: Second operand.
+    // OUTPUTS:
+    //      - C (heterogeneous) - T: Result, has same element type as two inputs.
+
+    //----create tensor_A_string
+    var tensor_A_string: []u8 = undefined;
+    defer allocator.free(tensor_A_string);
+
+    if (node.inputs.items[0].tag == globals.TensorTag.INITIALIZER) {
+        tensor_A_string = try std.mem.concat(allocator, u8, &[_][]const u8{
+            "@constCast(&param_lib.tensor_",
+            try utils.getSanitizedName(node.inputs.items[0].name),
+            ")",
+        });
+    } else {
+        tensor_A_string = try std.mem.concat(allocator, u8, &[_][]const u8{ "&tensor_", try utils.getSanitizedName(node.inputs.items[0].name) });
+    }
+
+    //----create tensor_B_string
+    var tensor_B_string: []u8 = undefined;
+    defer allocator.free(tensor_B_string);
+    if (node.inputs.items[1].tag == globals.TensorTag.INITIALIZER) {
+        tensor_B_string = try std.mem.concat(allocator, u8, &[_][]const u8{
+            "@constCast(&param_lib.tensor_",
+            try utils.getSanitizedName(node.inputs.items[1].name),
+            ")",
+        });
+    } else {
+        tensor_B_string = try std.mem.concat(allocator, u8, &[_][]const u8{ "&tensor_", try utils.getSanitizedName(node.inputs.items[1].name) });
+    }
+
+    _ = try writer.print(
+        \\
+        \\    tensMath.sub_tensors_lean(T, T, {s}, {s}, &tensor_{s})
     , .{
         tensor_A_string, // Input tensor A
         tensor_B_string, // Input tensor B
@@ -449,14 +497,25 @@ inline fn write_constant(writer: std.fs.File.Writer, node: *ReadyNode) !void {
     const output_name = try utils.getSanitizedName(node.outputs.items[0].name);
 
     for (node.nodeProto.attribute) |attr| {
-        if (std.mem.eql(u8, attr.name, "value")) {
-            // For TENSOR value, the tensor is already initialized during model loading
-            // No additional code needed for initialization
+        if (attr.type == onnx.AttributeType.TENSOR) {
+            const dataTypeString: []const u8 = try utils.getTypeString(attr.t.?.data_type);
+
             try writer.print(
                 \\
-                \\    // Constant tensor was already initialized during model loading
-                \\    // No additional code needed for tensor_{s}
+                \\    // Constant tensor_{s}
             , .{output_name});
+
+            // Generate the shape array for the constant tensor
+            try parameters.wrtiteTensorShape(writer, attr.t.?, output_name);
+            // Generate the data array for the constant tensor
+            try parameters.writeArray(writer, attr.t.?, output_name);
+
+            // Create the constant tensor instance
+            try writer.print(
+                \\
+                \\const tensor_{s} = Tensor({s}).fromConstBuffer(&allocator, &array_{s}, &shape_tensor_{s});
+            , .{ output_name, dataTypeString, output_name, output_name });
+
             return;
         } else if (std.mem.eql(u8, attr.name, "value_float")) {
             if (attr.type != AttributeType.FLOAT) return error.ConstantAttributeTypeMismatch;
@@ -2001,4 +2060,35 @@ inline fn write_resize(writer: std.fs.File.Writer, node: *ReadyNode) !void {
             try utils.getSanitizedName(node.outputs.items[0].name), //output
         },
     );
+}
+
+inline fn write_neg(writer: std.fs.File.Writer, node: *ReadyNode) !void {
+    // https://onnx.ai/onnx/operators/onnx__Neg.html
+    // INPUTS:
+    //      - X (heterogeneous) - T: Input tensor
+    // OUTPUTS:
+    //      - Y (heterogeneous) - T: Output tensor with flipped elements
+
+    // Create input tensor string
+    var input_tensor_string: []u8 = undefined;
+    defer allocator.free(input_tensor_string);
+
+    if (node.inputs.items[0].tag == globals.TensorTag.INITIALIZER) {
+        input_tensor_string = try std.mem.concat(allocator, u8, &[_][]const u8{
+            "@constCast(&param_lib.tensor_",
+            try utils.getSanitizedName(node.inputs.items[0].name),
+            ")",
+        });
+    } else {
+        input_tensor_string = try std.mem.concat(allocator, u8, &[_][]const u8{ "&tensor_", try utils.getSanitizedName(node.inputs.items[0].name) });
+    }
+
+    _ = try writer.print(
+        \\
+        \\
+        \\    tensMath.neg_lean(T, {s}, &tensor_{s})
+    , .{
+        input_tensor_string,
+        try utils.getSanitizedName(node.outputs.items[0].name),
+    });
 }

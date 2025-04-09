@@ -26,7 +26,7 @@ oneOp model generator: ✅ if the oneOpModel is created, remember to add the onn
 | LeakyRelu | [LeakyRelu](https://onnx.ai/onnx/operators/onnx__LeakyRelu.html) | [op_Leaky](../src/Core/Tensor/TensorMath/lib_activation_function_math/op_leaky_reLU.zig) | ✅ | ✅ | ✅ |
 | MatMul | [MatMul](https://onnx.ai/onnx/operators/onnx__MatMul.html)  | [op_matMul](../src/Core/Tensor/TensorMath/op_mat_mul.zig) | ✅ | ✅ | ✅ |
 | Mul| [Mul](https://onnx.ai/onnx/operators/onnx__Mul.html) | [op_mul](../src/Core/Tensor/TensorMath/lib_elementWise_math/op_multiplication.zig) | ✅ | ✅ | ✅ |
-| Neg| [Neg](https://onnx.ai/onnx/operators/onnx__Neg.html) | [op_neg](../src/Core/Tensor/TensorMath/lib_logical_math.zig) | ✅ | 🔴| 🔴|No output shape in math_handler|
+| Neg| [Neg](https://onnx.ai/onnx/operators/onnx__Neg.html) | [op_neg](../src/Core/Tensor/TensorMath/lib_logical_math.zig) | ✅ | ✅ | ✅ |
 | Relu| [Relu](https://onnx.ai/onnx/operators/onnx__Relu.html) | [op_relu](../src/Core/Tensor/TensorMath/lib_activation_function_math/op_reLU.zig) | ✅ | ✅ | ✅ |
 | Reshape| [Reshape](https://onnx.ai/onnx/operators/onnx__Reshape.html) | [op_reshape](../src/Core/Tensor/TensorMath/lib_shape_math/op_reshape.zig)  | ✅ | ✅ | ✅ |
 | Resize | [Resize](https://onnx.ai/onnx/operators/onnx__Resize.html) | [op_resize](../src/Core/Tensor/TensorMath/lib_shape_math/op_resize.zig) | ✅ | 🔴| 🔴| Missing attributes, Test failing only simple math working t2cache double free|

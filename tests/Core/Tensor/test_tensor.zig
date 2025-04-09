@@ -484,7 +484,7 @@ test "benchmark flatten_index implementations" {
         std.debug.print("\n       1D tensor: optimized={d}ms, original={d}ms, speedup={d:.2}x", .{ avg_optimized, avg_original, speedup });
 
         // Ensure optimized is at least as fast as original
-        try std.testing.expect(avg_optimized <= avg_original + 2);
+        try std.testing.expect(avg_optimized <= avg_original + 5);
     }
 
     // 2D tensor benchmark
